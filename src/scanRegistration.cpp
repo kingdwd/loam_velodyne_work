@@ -44,10 +44,22 @@
 #include <tf/transform_broadcaster.h>
 #include "loam_velodyne/common.h"
 #include "math_utils.h"
+#include "std_msgs/Int32.h"
 
 using std::sin;
 using std::cos;
 using std::atan2;
+
+// #define M_PI   3.141592653 
+#define DEG_TO_RAD(a) (a/180.0*M_PI) 
+#define RAD_TO_DEG(a) (a/M_PI*180.0)
+
+int flag_restart_scanRegistration = 0;
+
+//added by lichunjing 2017-12-25
+ros::Publisher pubRcvFlagRestartConfirmed;
+
+double time_laser = 0.0;    
 
 /** Point label options. */
 enum PointLabel {
@@ -203,6 +215,9 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
   float startOri = -atan2(laserCloudIn.points[0].y, laserCloudIn.points[0].x);
   float endOri = -atan2(laserCloudIn.points[cloudSize - 1].y,
                         laserCloudIn.points[cloudSize - 1].x) + 2 * M_PI;
+
+  time_laser = timeScanCur;
+  // ROS_INFO("laser time:%f",time_laser);
 
   if (endOri - startOri > 3 * M_PI) {
     endOri -= 2 * M_PI;
@@ -588,11 +603,16 @@ void imuHandler(const sensor_msgs::Imu::ConstPtr& imuIn)
   tf::Quaternion orientation;
   tf::quaternionMsgToTF(imuIn->orientation, orientation);
   tf::Matrix3x3(orientation).getRPY(roll, pitch, yaw);
+  //tf::Matrix3x3(orientation).getRPY(pitch, yaw, roll);
 
   Vector3 acc;
   acc.x() = imuIn->linear_acceleration.y - sin(roll) * cos(pitch) * 9.81;
   acc.y() = imuIn->linear_acceleration.z - cos(roll) * cos(pitch) * 9.81;
   acc.z() = imuIn->linear_acceleration.x + sin(pitch) * 9.81;
+
+  // acc.x() = 0.0;
+  // acc.y() = 0.0;
+  // acc.z() = 0.0;
 
   imuPointerLast = (imuPointerLast + 1) % imuQueLength;
 
@@ -602,7 +622,31 @@ void imuHandler(const sensor_msgs::Imu::ConstPtr& imuIn)
   imuYaw[imuPointerLast] = yaw;
   imuAcc[imuPointerLast] = acc;
 
+  // ROS_INFO("acc_x=%f  acc_y=%f  acc_z=%f  ",acc.x(), acc.y(), acc.z());
+  // ROS_INFO("Quaternion:%.3f %.3f %.3f %.3f", imuIn->orientation.x, imuIn->orientation.y, imuIn->orientation.z, imuIn->orientation.w);
+  // ROS_INFO("laser time:%f  Acc:%f %f %f  Angle:%f %f %f",time_laser, imuIn->linear_acceleration.x, imuIn->linear_acceleration.y, imuIn->linear_acceleration.z, RAD_TO_DEG(roll), RAD_TO_DEG(pitch), RAD_TO_DEG(yaw));
+  // ROS_INFO("laser time:%f  imu time:%f",time_laser, imuIn->header.stamp.toSec());
+
   AccumulateIMUShift();
+}
+
+//added by lichunjing 2017-12-26
+void RestartscanRegistrationHandler(const std_msgs::Int32::ConstPtr& msgIn)
+{
+  std_msgs::Int32 msg;
+  msg.data = 1;
+
+  if(msgIn->data == 1)
+  {
+    flag_restart_scanRegistration = 1;
+    pubRcvFlagRestartConfirmed.publish(msg);
+  }
+
+  if((msgIn->data == 0)&&(flag_restart_scanRegistration == 1))
+  {
+    ROS_FATAL("restart_loam: scanRegistration");
+    ros::shutdown();
+  }
 }
 
 int main(int argc, char** argv)
@@ -668,6 +712,9 @@ int main(int argc, char** argv)
 
   ros::Subscriber subImu = nh.subscribe<sensor_msgs::Imu> ("/imu/data", 50, imuHandler);
 
+  //added by lichunjing 2017-12-26
+  ros::Subscriber subscanRegistration = nh.subscribe<std_msgs::Int32>("/flag_restart_scanRegistration", 20, RestartscanRegistrationHandler);
+
   pubLaserCloud = nh.advertise<sensor_msgs::PointCloud2>
                                  ("/velodyne_cloud_2", 2);
 
@@ -684,6 +731,9 @@ int main(int argc, char** argv)
                                            ("/laser_cloud_less_flat", 2);
 
   pubImuTrans = nh.advertise<sensor_msgs::PointCloud2> ("/imu_trans", 5);
+
+  //added by lichunjing 2017-12-26
+  pubRcvFlagRestartConfirmed = nh.advertise<std_msgs::Int32>("/flag_rcved_scanRegistration", 2);
 
   ros::spin();
 

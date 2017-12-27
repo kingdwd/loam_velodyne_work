@@ -1,15 +1,15 @@
 <launch>
 
-  <arg name="rviz" default="true" />
+  <arg name="rviz" default="false" />
 
-  <node pkg="loam_velodyne" type="scanRegistration" name="scanRegistration" output="screen">
+  <node pkg="loam_velodyne" type="scanRegistration" name="scanRegistration" respawn="true" output="screen">
   </node>
 
   <node pkg="loam_velodyne" type="laserOdometry" name="laserOdometry" output="screen" respawn="true">
   </node>
 
-  <node pkg="loam_velodyne" type="laserMapping" name="laserMapping" output="screen"/>
-  <node pkg="loam_velodyne" type="transformMaintenance" name="transformMaintenance" output="screen"/>
+  <node pkg="loam_velodyne" type="laserMapping" name="laserMapping" respawn="true" output="screen"/>
+  <node pkg="loam_velodyne" type="transformMaintenance" name="transformMaintenance" respawn="true" output="screen"/>
 
   <group if="$(arg rviz)">
     <node launch-prefix="nice" pkg="rviz" type="rviz" name="rviz" args="-d $(find loam_velodyne)/rviz_cfg/loam_velodyne.rviz" />

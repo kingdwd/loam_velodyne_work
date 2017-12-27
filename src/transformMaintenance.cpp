@@ -45,6 +45,16 @@
 #include <tf/transform_datatypes.h>
 #include <tf/transform_broadcaster.h>
 
+#include "std_msgs/String.h"
+#include "std_msgs/Float64.h"
+#include "std_msgs/Float64MultiArray.h"  
+
+#include "std_msgs/Int32.h"
+
+//added by lichunjing 2017-12-26
+int flag_restart_transformMaintenance = 0;
+ros::Publisher pubRcvFlagRestartConfirmed;
+
 float transformSum[6] = {0};
 float transformIncre[6] = {0};
 float transformMapped[6] = {0};
@@ -52,9 +62,12 @@ float transformBefMapped[6] = {0};
 float transformAftMapped[6] = {0};
 
 ros::Publisher *pubLaserOdometry2Pointer = NULL;
+ros::Publisher *serial_send_data = NULL;
+
 tf::TransformBroadcaster *tfBroadcaster2Pointer = NULL;
 nav_msgs::Odometry laserOdometry2;
 tf::StampedTransform laserOdometryTrans2;
+
 
 void transformAssociateToMap()
 {
@@ -146,6 +159,34 @@ void transformAssociateToMap()
 void laserOdometryHandler(const nav_msgs::Odometry::ConstPtr& laserOdometry)
 {
   double roll, pitch, yaw;
+
+  // std_msgs::String msg;
+  // std::stringstream ss;
+  // ss << "Hello test1_b! I am test1_a.";
+  // msg.data = ss.str();
+  // r2.data[0]=r1.data[0];
+  // r2.data[1]=r1.data[1];
+  // r2.data[2]=r1.data[2];
+  // r2.data[3]=r1.data[3];
+  // r2.data[4]=r1.data[4];
+  // r2.data[5]=r1.data[5];
+  // r2.data[6]=r1.data[6];
+  // r2.data[7]=r1.data[7];
+
+  // std_msgs::Float64 msg;
+  // msg.data[0] = 3.2;
+  // msg.data[1] = 6.4;
+
+
+    std_msgs::Float64MultiArray msg;
+
+    // msg.data.push_back(1.0);
+    // msg.data.push_back(2.0);
+    // msg.data.push_back(3.0);
+    // msg.data.push_back(4.0);
+    // msg.data.push_back(5.0);
+    // msg.data.push_back(6.0);
+
   geometry_msgs::Quaternion geoQuat = laserOdometry->pose.pose.orientation;
   tf::Matrix3x3(tf::Quaternion(geoQuat.z, -geoQuat.x, -geoQuat.y, geoQuat.w)).getRPY(roll, pitch, yaw);
 
@@ -171,6 +212,20 @@ void laserOdometryHandler(const nav_msgs::Odometry::ConstPtr& laserOdometry)
   laserOdometry2.pose.pose.position.y = transformMapped[4];
   laserOdometry2.pose.pose.position.z = transformMapped[5];
   pubLaserOdometry2Pointer->publish(laserOdometry2);
+
+
+  msg.data.push_back(laserOdometry2.header.stamp.sec);
+  msg.data.push_back(laserOdometry2.header.stamp.nsec);
+  msg.data.push_back(laserOdometry2.pose.pose.orientation.x);
+  msg.data.push_back(laserOdometry2.pose.pose.orientation.y);
+  msg.data.push_back(laserOdometry2.pose.pose.orientation.z);
+  msg.data.push_back(laserOdometry2.pose.pose.orientation.w);
+  msg.data.push_back(laserOdometry2.pose.pose.position.x);
+  msg.data.push_back(laserOdometry2.pose.pose.position.y);
+  msg.data.push_back(laserOdometry2.pose.pose.position.z);
+
+  serial_send_data->publish(msg);
+  // ROS_INFO("Msg_arrival_Callback******************#######");
 
   laserOdometryTrans2.stamp_ = laserOdometry->header.stamp;
   laserOdometryTrans2.setRotation(tf::Quaternion(-geoQuat.y, -geoQuat.z, geoQuat.x, geoQuat.w));
@@ -201,6 +256,25 @@ void odomAftMappedHandler(const nav_msgs::Odometry::ConstPtr& odomAftMapped)
   transformBefMapped[5] = odomAftMapped->twist.twist.linear.z;
 }
 
+//added by lichunjing 2017-12-26
+void RestarttransformMaintenanceHandler(const std_msgs::Int32::ConstPtr& msgIn)
+{
+  std_msgs::Int32 msg;
+  msg.data = 1;
+
+  if(msgIn->data == 1)
+  {
+    flag_restart_transformMaintenance = 1;
+    pubRcvFlagRestartConfirmed.publish(msg);
+  }
+
+  if((msgIn->data == 0)&&(flag_restart_transformMaintenance == 1))
+  {
+    ROS_FATAL("restart_loam: transformMaintenance");
+    ros::shutdown();
+  }
+}
+
 int main(int argc, char** argv)
 {
   ros::init(argc, argv, "transformMaintenance");
@@ -212,8 +286,18 @@ int main(int argc, char** argv)
   ros::Subscriber subOdomAftMapped = nh.subscribe<nav_msgs::Odometry> 
                                      ("/aft_mapped_to_init", 5, odomAftMappedHandler);
 
+  //added by lichunjing 2017-12-26
+  ros::Subscriber subtransformMaintenance = nh.subscribe<std_msgs::Int32>("/flag_restart_transformMaintenance", 20, RestarttransformMaintenanceHandler);
+
   ros::Publisher pubLaserOdometry2 = nh.advertise<nav_msgs::Odometry> ("/integrated_to_init", 5);
   pubLaserOdometry2Pointer = &pubLaserOdometry2;
+
+  ros::Publisher pubserial_send_data = nh.advertise<std_msgs::Float64MultiArray>("/serial_send_message",1000);
+  serial_send_data = &pubserial_send_data;
+
+  //added by lichunjing 2017-12-26
+  pubRcvFlagRestartConfirmed = nh.advertise<std_msgs::Int32>("/flag_rcved_transformMaintenance", 2);
+
   laserOdometry2.header.frame_id = "/camera_init";
   laserOdometry2.child_frame_id = "/camera";
 

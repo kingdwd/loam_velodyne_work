@@ -47,6 +47,11 @@
 #include <Eigen/QR>
 #include "loam_velodyne/nanoflann_pcl.h"
 #include "math_utils.h"
+#include "std_msgs/Int32.h"
+
+//added by lichunjing 2017-12-26
+int flag_restart_laserOdometry = 0;
+ros::Publisher pubRcvFlagRestartConfirmed;
 
 const float scanPeriod = 0.1;
 
@@ -316,6 +321,25 @@ void imuTransHandler(const sensor_msgs::PointCloud2ConstPtr& imuTrans2)
   newImuTrans = true;
 }
 
+//added by lichunjing 2017-12-26
+void RestartlaserOdometryHandler(const std_msgs::Int32::ConstPtr& msgIn)
+{
+  std_msgs::Int32 msg;
+  msg.data = 1;
+
+  if(msgIn->data == 1)
+  {
+    flag_restart_laserOdometry = 1;
+    pubRcvFlagRestartConfirmed.publish(msg);
+  }
+
+  if((msgIn->data == 0)&&(flag_restart_laserOdometry == 1))
+  {
+    ROS_FATAL("restart_loam: laserOdometry");
+    ros::shutdown();
+  }
+}
+
 
 int main(int argc, char** argv)
 {
@@ -349,7 +373,14 @@ int main(int argc, char** argv)
   ros::Publisher pubLaserCloudFullRes = nh.advertise<sensor_msgs::PointCloud2> 
                                         ("/velodyne_cloud_3", 2);
 
+  //added by lichunjing 2017-12-26
+  ros::Subscriber sublaserOdometry = nh.subscribe<std_msgs::Int32>("/flag_restart_laserOdometry", 20, RestartlaserOdometryHandler);
+
   ros::Publisher pubLaserOdometry = nh.advertise<nav_msgs::Odometry> ("/laser_odom_to_init", 5);
+
+  //added by lichunjing 2017-12-26
+  pubRcvFlagRestartConfirmed = nh.advertise<std_msgs::Int32>("/flag_rcved_laserOdometry", 2);
+
   nav_msgs::Odometry laserOdometry;
   laserOdometry.header.frame_id = "/camera_init";
   laserOdometry.child_frame_id = "/laser_odom";

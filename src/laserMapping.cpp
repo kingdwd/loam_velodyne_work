@@ -45,6 +45,11 @@
 #include <Eigen/QR>
 #include "loam_velodyne/nanoflann_pcl.h"
 #include "math_utils.h"
+#include "std_msgs/Int32.h"
+
+//added by lichunjing 2017-12-26
+int flag_restart_laserMapping = 0;
+ros::Publisher pubRcvFlagRestartConfirmed;
 
 const float scanPeriod = 0.1;
 
@@ -296,6 +301,26 @@ void imuHandler(const sensor_msgs::Imu::ConstPtr& imuIn)
   imuPitch[imuPointerLast] = pitch;
 }
 
+//added by lichunjing 2017-12-26
+void RestartlaserMappingHandler(const std_msgs::Int32::ConstPtr& msgIn)
+{
+  std_msgs::Int32 msg;
+  msg.data = 1;
+
+  if(msgIn->data == 1)
+  {
+    flag_restart_laserMapping = 1;
+    pubRcvFlagRestartConfirmed.publish(msg);
+  }
+
+  if((msgIn->data == 0)&&(flag_restart_laserMapping == 1))
+  {
+    ROS_FATAL("restart_loam: laserMapping");
+    ros::shutdown();
+  }
+}
+
+
 int main(int argc, char** argv)
 {
   ros::init(argc, argv, "laserMapping");
@@ -315,6 +340,9 @@ int main(int argc, char** argv)
 
   ros::Subscriber subImu = nh.subscribe<sensor_msgs::Imu> ("/imu/data", 50, imuHandler);
 
+  //added by lichunjing 2017-12-26
+  ros::Subscriber sublaserMapping = nh.subscribe<std_msgs::Int32>("/flag_restart_laserMapping", 20, RestartlaserMappingHandler);
+
   ros::Publisher pubLaserCloudSurround = nh.advertise<sensor_msgs::PointCloud2> 
                                          ("/laser_cloud_surround", 1);
 
@@ -322,6 +350,10 @@ int main(int argc, char** argv)
                                         ("/velodyne_cloud_registered", 2);
 
   ros::Publisher pubOdomAftMapped = nh.advertise<nav_msgs::Odometry> ("/aft_mapped_to_init", 5);
+
+  //added by lichunjing 2017-12-26
+  pubRcvFlagRestartConfirmed = nh.advertise<std_msgs::Int32>("/flag_rcved_laserMapping", 2);
+
   nav_msgs::Odometry odomAftMapped;
   odomAftMapped.header.frame_id = "/camera_init";
   odomAftMapped.child_frame_id = "/aft_mapped";
